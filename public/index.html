@@ -349,6 +349,32 @@ function broadcast(data) {
   Object.values(peers).forEach(p => { if (p.conn && p.conn.open) p.conn.send(data); });
 }
 
+// ── KEEP ALIVE ─────────────────────────────────────────────────────────────
+function startKeepAlive() {
+  setInterval(() => {
+    if (!peer) return;
+    // ping all open connections
+    Object.values(peers).forEach(p => {
+      if (p.conn && p.conn.open) {
+        try { p.conn.send({ type: 'ping' }); } catch(e) {}
+      }
+    });
+    // if we lost connection to host, reconnect
+    if (!amHost) {
+      const hostConn = peers[HOST_ID];
+      if (!hostConn || !hostConn.conn || !hostConn.conn.open) {
+        connectTo(HOST_ID);
+      }
+    }
+    // reconnect to any peer we lost
+    Object.entries(peers).forEach(([pid, p]) => {
+      if (p.name && p.name !== '???' && (!p.conn || !p.conn.open)) {
+        connectTo(pid);
+      }
+    });
+  }, 10000); // every 10 seconds
+}
+
 // ── SETUP A DATA CONNECTION ────────────────────────────────────────────────
 function setupConn(conn) {
   const pid = conn.peer;
@@ -466,6 +492,7 @@ function connectTo(targetId) {
       document.getElementById('staticOverlay').classList.add('active');
       setTimeout(() => document.getElementById('staticOverlay').classList.remove('active'), 100);
     }
+    if (data.type === 'ping') return;
     if (data.type === 'ptt-stop') {
       updateUsersPanel(null);
       setScreen(CHANNEL, 'ONLINE', 'active');
@@ -603,6 +630,7 @@ function onReady(isHost) {
   updateUsersPanel(null);
   playStatic(300);
   log(`Verbunden als ${myName}`, 'success');
+  startKeepAlive();
 
   // Accept incoming connections
   peer.on('connection', (conn) => {
