@@ -737,21 +737,42 @@ async function requestWakeLock() {
       wakeLock = await navigator.wakeLock.request('screen');
       log('Gerät bleibt aktiv (Wake Lock)', 'success');
       wakeLock.addEventListener('release', () => {
-        // re-acquire if page still visible
-        if (document.visibilityState === 'visible') requestWakeLock();
+        if (document.visibilityState === 'visible') {
+          requestWakeLock();
+          forceRejoin();
+        }
       });
     }
   } catch(e) {}
 }
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && peer) {
+  if (document.visibilityState === 'visible') {
     requestWakeLock();
-    // reconnect to host if we lost connection
-    if (!peers[HOST_ID] && !amHost) {
-      setTimeout(() => connectTo(HOST_ID), 500);
-    }
+    forceRejoin();
   }
 });
+
+// ── FORCE REJOIN ───────────────────────────────────────────────────────────
+function forceRejoin() {
+  if (!myStream || !myName || myName === 'GHOST') return; // not tuned in yet
+  log('Verbindung wird wiederhergestellt...', 'important');
+
+  // destroy old peer completely
+  if (peer) {
+    try { peer.destroy(); } catch(e) {}
+    peer = null;
+  }
+  peers = {};
+  amHost = false;
+  updateUsersPanel(null);
+  setScreen(CHANNEL, 'TUNING...', '');
+  setSignal(1);
+
+  // wait a beat then reconnect fresh
+  setTimeout(() => {
+    attemptHost();
+  }, 1000);
+}
 
 // ── UPTIME ────────────────────────────────────────────────────────────────
 async function fetchUptime() {
