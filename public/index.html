@@ -366,6 +366,17 @@ function setupConn(conn) {
         const call = peer.call(pid, myStream);
         peers[pid].call = call;
         call.on('stream', s => attachAudio(pid, s));
+        // tell new person about ALL existing peers so they can connect to everyone
+        const existingPeers = Object.keys(peers).filter(id => id !== pid && peers[id].name && peers[id].name !== '???');
+        if (existingPeers.length > 0 && conn.open) {
+          conn.send({ type: 'peer-list', peers: existingPeers });
+        }
+        // tell all existing peers about the new person
+        Object.entries(peers).forEach(([id, p]) => {
+          if (id !== pid && p.conn && p.conn.open) {
+            p.conn.send({ type: 'new-peer', peerId: pid });
+          }
+        });
       }
       updateUsersPanel(null);
       if (isNew) {
@@ -373,6 +384,14 @@ function setupConn(conn) {
         playStatic(150);
         setSignal(Math.min(5, Object.keys(peers).length + 3));
       }
+    }
+    if (data.type === 'peer-list') {
+      // connect to all peers we don't know yet
+      data.peers.forEach(pid => connectTo(pid));
+    }
+    if (data.type === 'new-peer') {
+      // someone new joined, connect to them
+      connectTo(data.peerId);
     }
     if (data.type === 'ptt-start') {
       if (peers[pid]) peers[pid].name = data.name;
@@ -451,6 +470,12 @@ function connectTo(targetId) {
       updateUsersPanel(null);
       setScreen(CHANNEL, 'ONLINE', 'active');
       playStatic(80); playBeep();
+    }
+    if (data.type === 'peer-list') {
+      data.peers.forEach(pid => connectTo(pid));
+    }
+    if (data.type === 'new-peer') {
+      connectTo(data.peerId);
     }
     if (data.type === 'bye') {
       const name = peers[targetId]?.name || 'jemand';
@@ -691,7 +716,13 @@ async function requestWakeLock() {
   } catch(e) {}
 }
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && peer) requestWakeLock();
+  if (document.visibilityState === 'visible' && peer) {
+    requestWakeLock();
+    // reconnect to host if we lost connection
+    if (!peers[HOST_ID] && !amHost) {
+      setTimeout(() => connectTo(HOST_ID), 500);
+    }
+  }
 });
 
 // ── UPTIME ────────────────────────────────────────────────────────────────
